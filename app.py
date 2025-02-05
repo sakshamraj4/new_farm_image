@@ -71,8 +71,8 @@ def display_farm_info(data, farm_name):
                 response = requests.get(row['Image URL'])
                 response.raise_for_status()  # This will raise an exception for bad status codes
                 
-                # Try to display the image
-                st.image(row['Image URL'], caption=f"Image {index + 1}", use_container_width=True)
+                # Try to display the image - removed use_container_width parameter
+                st.image(row['Image URL'], caption=f"Image {index + 1}")
                 
                 # Only proceed with download button if image is valid
                 img_name = (f"{row['farmName']}_{row['Date'].strftime('%Y-%m-%d')}_{index + 1}.jpg" 
