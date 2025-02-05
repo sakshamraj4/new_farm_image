@@ -61,28 +61,51 @@ def display_farm_info(data, farm_name):
     for index, row in farm_data.iterrows():
         col1, col2 = st.columns(2)
         with col1:
-            st.image(row['Image URL'], caption=f"Image {index + 1}", use_container_width=True)
-            img_name = (f"{row['farmName']}_{row['Date'].strftime('%Y-%m-%d')}_{index + 1}.jpg" 
-                       if isinstance(row['Date'], pd.Timestamp) 
-                       else f"{row['farmName']}_unknown_date_{index + 1}.jpg")
-            img_data, img_filename = download_image(row['Image URL'], img_name)
-            if img_data:
-                st.download_button(label="Download Image", data=img_data, file_name=img_filename, mime="image/jpeg")
-                images_to_download.append((img_data, img_filename))
+            # Add error handling for image display
+            try:
+                if pd.isna(row['Image URL']) or not isinstance(row['Image URL'], str):
+                    st.warning(f"Invalid image URL for entry {index + 1}")
+                    continue
+                    
+                # Try to fetch the image first to validate it
+                response = requests.get(row['Image URL'])
+                response.raise_for_status()  # This will raise an exception for bad status codes
+                
+                # Try to display the image
+                st.image(row['Image URL'], caption=f"Image {index + 1}", use_container_width=True)
+                
+                # Only proceed with download button if image is valid
+                img_name = (f"{row['farmName']}_{row['Date'].strftime('%Y-%m-%d')}_{index + 1}.jpg" 
+                           if isinstance(row['Date'], pd.Timestamp) 
+                           else f"{row['farmName']}_unknown_date_{index + 1}.jpg")
+                img_data, img_filename = download_image(row['Image URL'], img_name)
+                if img_data:
+                    st.download_button(label="Download Image", data=img_data, file_name=img_filename, mime="image/jpeg")
+                    images_to_download.append((img_data, img_filename))
+            except requests.exceptions.RequestException as e:
+                st.error(f"Error loading image {index + 1}: {str(e)}")
+            except Exception as e:
+                st.error(f"Unexpected error displaying image {index + 1}: {str(e)}")
             
         with col2:
             st.write("Farm Name:", row['farmName'])
             st.write("Other Information:")
             try:
-                json_data = json.loads(row['json data'])
-                for item in json_data:
-                    st.write(f"{item['name']}: {item['value']}")
+                if pd.isna(row['json data']):
+                    st.warning("No JSON data available")
+                else:
+                    json_data = json.loads(row['json data'])
+                    for item in json_data:
+                        st.write(f"{item['name']}: {item['value']}")
             except json.JSONDecodeError:
                 st.error("Invalid JSON data")
+            except Exception as e:
+                st.error(f"Error processing JSON data: {str(e)}")
+            
             st.write("#### Activity ")
-            st.write(row['activity_record'])
+            st.write(row['activity_record'] if not pd.isna(row['activity_record']) else "No activity recorded")
             st.write('##### Activity Date')
-            st.write(row['Date'])
+            st.write(row['Date'] if not pd.isna(row['Date']) else "No date recorded")
     
     return images_to_download
 
@@ -106,15 +129,20 @@ def main():
         st.error(f"Error loading data: {e}")
         return
 
-    if 'json data' not in data.columns:
-        st.error("The 'json data' column is not present in the uploaded file.")
+    # Add data validation
+    required_columns = ['farmName', 'json data', 'Image URL', 'activity_record', 'Date']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    if missing_columns:
+        st.error(f"Missing required columns: {', '.join(missing_columns)}")
         return
     
+    # Clean the data
     data['json_data'] = data['json data'].apply(safe_json_loads)
-    data = data.dropna(subset=['json_data'])
+    data = data.dropna(subset=['farmName'])  # Only drop rows with missing farm names
     data['Severity'] = data['json_data'].apply(lambda x: extract_levels(x, 'Severity'))
 
     farms = filter_farms(data)
+    
     
     # Updated query parameter handling
     farm_name_param = st.query_params.get('farm_name', None)
